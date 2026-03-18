@@ -389,6 +389,7 @@ async def market_discovery_loop(state: dict) -> None:
 
             if window:
                 # Only log when we switch to a new window
+                if not old or old.slug != window.slug:
                     log.info(
                         "Active window: %s | closes %s UTC",
                         window.slug,

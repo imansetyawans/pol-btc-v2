@@ -330,6 +330,18 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
             await asyncio.sleep(1)
             continue
 
+        # ── Window Change Reset ──────────────────────────────────────────
+        if current_window_slug != window.slug:
+            log.info("--- Wallet %d New Window Detected: %s ---", wallet_id, window.slug)
+            current_window_slug = window.slug
+            wallet_state["window_locked"] = False
+            wallet_state["position_shares"] = 0
+            wallet_state["sell_locked"] = False
+            wallet_state["last_trade"] = "No trades yet"
+            # Optional: update global state if this is the primary wallet or for general visibility
+            if wallet_id == 0:
+                state["last_trade"] = "No trades yet"
+
         # Check if we should execute a pre-close sell (configurable limit before resolution)
         if wallet_state.get("window_locked", False):
             if not wallet_state.get("sell_locked", False) and wallet_state.get("position_shares", 0) > 0:
@@ -356,23 +368,6 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
             # Continue high-frequency ticking if window is locked to wait for sell
             await asyncio.sleep(0.05)
             continue
-
-        btc_price = state.get("btc_price", 0)
-        up_odds = state.get("up_odds", 0)
-        down_odds = state.get("down_odds", 0)
-        positions = state.get("positions", [])
-
-        # ── Window Change Reset ──────────────────────────────────────────
-        if current_window_slug != window.slug:
-            log.info("--- Wallet %d New Window Detected: %s ---", wallet_id, window.slug)
-            current_window_slug = window.slug
-            wallet_state["window_locked"] = False
-            wallet_state["position_shares"] = 0
-            wallet_state["sell_locked"] = False
-            wallet_state["last_trade"] = "No trades yet"
-            # Optional: update global state if this is the primary wallet or for general visibility
-            if wallet_id == 0:
-                state["last_trade"] = "No trades yet"
 
         # Skip trading logic if data not ready, but continue to show what we have
         if btc_price <= 0 or window.price_to_beat <= 0 or up_odds <= 0 or down_odds <= 0:
