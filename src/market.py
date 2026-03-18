@@ -71,6 +71,7 @@ POLYGON_RPCS.extend(config.POLYGON_RPC_FALLBACKS)
 # Rate limiting protection
 _rpc_failures = defaultdict(lambda: {"count": 0, "last_fail": 0})
 _last_request_time = defaultdict(float)
+_historical_price_cache = {}
 CIRCUIT_BREAKER_THRESHOLD = 5
 CIRCUIT_BREAKER_COOLDOWN = 300
 MIN_REQUEST_INTERVAL = 0.2
@@ -125,15 +126,16 @@ def fetch_chainlink_btc_sync() -> Optional[float]:
             try:
                 _throttle_request(rpc)
                 w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
-                if w3.is_connected():
-                    contract = w3.eth.contract(
-                        address=Web3.to_checksum_address(CHAINLINK_BTC_USD),
-                        abi=CHAINLINK_ABI,
-                    )
-                    decimals = contract.functions.decimals().call()
-                    data = contract.functions.latestRoundData().call()
-                    price = data[1] / (10 ** decimals)
-                    return price if price > 0 else None
+                if not w3.is_connected():
+                    break
+                contract = w3.eth.contract(
+                    address=Web3.to_checksum_address(CHAINLINK_BTC_USD),
+                    abi=CHAINLINK_ABI,
+                )
+                decimals = contract.functions.decimals().call()
+                data = contract.functions.latestRoundData().call()
+                price = data[1] / (10 ** decimals)
+                return price if price > 0 else None
             except Exception as e:
                 is_rate_limit = _is_rate_limited(e)
                 if is_rate_limit:
@@ -153,8 +155,12 @@ def fetch_chainlink_btc_sync() -> Optional[float]:
 def fetch_historical_chainlink_btc_sync(target_ts: int) -> Optional[float]:
     """
     Synchronously fetches the exact Chainlink BTC/USD price at or immediately preceding target_ts.
-    It linear-searches backwards from latestRoundData to perfectly match the Polymarket start strike.
+    Uses binary search for efficiency (9 calls vs 300).
     """
+    if target_ts in _historical_price_cache:
+        log.debug("Cache hit for timestamp %s", target_ts)
+        return _historical_price_cache[target_ts]
+
     for rpc in POLYGON_RPCS:
         if _should_skip_rpc(rpc):
             continue
@@ -164,28 +170,38 @@ def fetch_historical_chainlink_btc_sync(target_ts: int) -> Optional[float]:
             try:
                 _throttle_request(rpc)
                 w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
-                if w3.is_connected():
-                    contract = w3.eth.contract(
-                        address=Web3.to_checksum_address(CHAINLINK_BTC_USD),
-                        abi=CHAINLINK_ABI,
-                    )
-                    decimals = contract.functions.decimals().call()
-                    latest = contract.functions.latestRoundData().call()
-                    round_id = latest[0]
+                if not w3.is_connected():
+                    break
+                contract = w3.eth.contract(
+                    address=Web3.to_checksum_address(CHAINLINK_BTC_USD),
+                    abi=CHAINLINK_ABI,
+                )
+                decimals = contract.functions.decimals().call()
+                latest = contract.functions.latestRoundData().call()
+                round_id = latest[0]
 
-                    found_price = None
-                    # Search backwards for up to 300 rounds
-                    for i in range(300):
-                        data = contract.functions.getRoundData(round_id - i).call()
-                        up_ts = data[3]
-                        price = data[1] / (10 ** decimals)
-                        if up_ts < target_ts:
-                            # We crossed the start time boundary backwards.
-                            # The very FIRST round at or after the boundary was stored in found_price
-                            return found_price
-                        else:
-                            # Keep track of the oldest round we've seen that is still >= target_ts
-                            found_price = price
+                # Binary search for target timestamp
+                left, right = 0, 300
+                found_price = None
+
+                while left <= right:
+                    mid = (left + right) // 2
+                    data = contract.functions.getRoundData(round_id - mid).call()
+                    ts = data[3]
+                    price = data[1] / (10 ** decimals)
+
+                    if ts == target_ts:
+                        found_price = price
+                        break
+                    elif ts > target_ts:
+                        left = mid + 1
+                        found_price = price
+                    else:
+                        right = mid - 1
+
+                if found_price:
+                    _historical_price_cache[target_ts] = found_price
+                    return found_price
             except Exception as e:
                 is_rate_limit = _is_rate_limited(e)
                 if is_rate_limit:
@@ -381,21 +397,25 @@ async def market_discovery_loop(state: dict) -> None:
                     )
                     state["window_locked"] = False  # reset trade lock for new window
 
-                # Since Polymarket Gamma API might take 10-60+ seconds to accurately resolve 
-                # the exact Chainlink strike price for the start of the window, we actively 
+                # Since Polymarket Gamma API might take 10-60+ seconds to accurately resolve
+                # the exact Chainlink strike price for the start of the window, we actively
                 # binary-search the Chainlink Oracle historically for the exact start_date.
                 if window.price_to_beat == 0:
                     now = datetime.now(timezone.utc)
                     if now >= window.start_date:
                         target_ts = int(window.start_date.timestamp())
-                        loop = asyncio.get_event_loop()
-                        oracle_price = await loop.run_in_executor(None, fetch_historical_chainlink_btc_sync, target_ts)
-                        if oracle_price is not None and oracle_price > 0:
-                            window.price_to_beat = oracle_price
-                            log.info(
-                                "Accurately fetched historical start-of-window Chainlink Oracle price %s for %s",
-                                oracle_price, window.slug
-                            )
+                        # Check cache first to avoid redundant executor calls
+                        if target_ts in _historical_price_cache:
+                            window.price_to_beat = _historical_price_cache[target_ts]
+                        else:
+                            loop = asyncio.get_event_loop()
+                            oracle_price = await loop.run_in_executor(None, fetch_historical_chainlink_btc_sync, target_ts)
+                            if oracle_price is not None and oracle_price > 0:
+                                window.price_to_beat = oracle_price
+                                log.info(
+                                    "Accurately fetched historical start-of-window Chainlink Oracle price %s for %s",
+                                    oracle_price, window.slug
+                                )
                 
                 # Preserve priceToBeat from previous iteration (already found)
                 if (window.price_to_beat == 0
