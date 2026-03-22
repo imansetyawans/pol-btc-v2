@@ -394,6 +394,7 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
 
         # Resolve dynamic gap trigger based on time of day
         current_gap_trigger = get_dynamic_gap_trigger()
+        state["gap_trigger"] = current_gap_trigger
 
         # Run quantitative model
         signal = evaluate_market(

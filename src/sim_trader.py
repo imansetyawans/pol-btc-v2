@@ -262,6 +262,7 @@ async def sim_trade_loop(portfolio: SimPortfolio, state: dict) -> None:
 
         # Resolve dynamic gap trigger based on time of day
         current_gap_trigger = get_dynamic_gap_trigger()
+        state["gap_trigger"] = current_gap_trigger
 
         # Run quantitative model 
         signal = evaluate_market(

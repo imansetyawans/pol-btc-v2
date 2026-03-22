@@ -120,7 +120,15 @@ def _make_price_panel(state: dict) -> Panel:
     else:
         table.add_row("Gap", "[dim]—[/]")
 
-    return Panel(table, title="[bold]₿ BTC Price (Binance)[/]", border_style=BORDER, height=7)
+    # Dynamic Gap Trigger
+    trigger = state.get("gap_trigger")
+    if trigger:
+        trigger_style = "bright_green" if trigger < 100 else "bright_yellow"
+        table.add_row("Gap Trigger", f"[{trigger_style}]${trigger:,.2f}[/]")
+    else:
+        table.add_row("Gap Trigger", "[dim]—[/]")
+
+    return Panel(table, title="[bold]₿ BTC Price (Binance)[/]", border_style=BORDER, height=8)
 
 
 def _make_odds_panel(state: dict) -> Panel:
