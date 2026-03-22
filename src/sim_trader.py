@@ -204,6 +204,7 @@ async def sim_trade_loop(portfolio: SimPortfolio, state: dict) -> None:
     After each trade, waits for window resolution to determine win/loss.
     """
     from src.strategy import evaluate_market
+    from src.utils import get_dynamic_gap_trigger
     
     current_window_slug = None
 
@@ -259,6 +260,9 @@ async def sim_trade_loop(portfolio: SimPortfolio, state: dict) -> None:
             await asyncio.sleep(0.5)
             continue
 
+        # Resolve dynamic gap trigger based on time of day
+        current_gap_trigger = get_dynamic_gap_trigger()
+
         # Run quantitative model 
         signal = evaluate_market(
             btc_price=btc_price,
@@ -271,7 +275,7 @@ async def sim_trade_loop(portfolio: SimPortfolio, state: dict) -> None:
             edge_threshold=config.EDGE_THRESHOLD,
             kelly_fraction=config.KELLY_FRACTION,
             entry_seconds=config.ENTRY_SECONDS_BEFORE_CLOSE,
-            gap_trigger_usd=config.GAP_TRIGGER_USD
+            gap_trigger_usd=current_gap_trigger
         )
         
         if signal:

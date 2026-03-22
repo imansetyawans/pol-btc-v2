@@ -297,7 +297,7 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
     """
     from src.strategy import evaluate_market
     from src.equity import get_total_equity
-    from src.utils import is_in_cooldown
+    from src.utils import is_in_cooldown, get_dynamic_gap_trigger
 
     current_window_slug = None
 
@@ -392,6 +392,9 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
         equity = await loop.run_in_executor(None, get_total_equity, client, wallet_positions)
         total_balance = equity["usdc_balance"]
 
+        # Resolve dynamic gap trigger based on time of day
+        current_gap_trigger = get_dynamic_gap_trigger()
+
         # Run quantitative model
         signal = evaluate_market(
             btc_price=btc_price,
@@ -404,7 +407,7 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
             edge_threshold=config.EDGE_THRESHOLD,
             kelly_fraction=config.KELLY_FRACTION,
             entry_seconds=config.ENTRY_SECONDS_BEFORE_CLOSE,
-            gap_trigger_usd=config.GAP_TRIGGER_USD
+            gap_trigger_usd=current_gap_trigger
         )
 
         if signal:
@@ -441,7 +444,7 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
                     edge_threshold=config.EDGE_THRESHOLD,
                     kelly_fraction=config.KELLY_FRACTION,
                     entry_seconds=config.ENTRY_SECONDS_BEFORE_CLOSE,
-                    gap_trigger_usd=config.GAP_TRIGGER_USD
+                    gap_trigger_usd=current_gap_trigger
                 )
                 
                 if not exact_signal.should_trade:

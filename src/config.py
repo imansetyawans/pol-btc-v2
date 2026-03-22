@@ -56,7 +56,11 @@ KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.5"))
 BTC_VOLATILITY_PER_SEC: float = float(os.getenv("BTC_VOLATILITY_PER_SEC", "0.15"))
 ENTRY_SECONDS_BEFORE_CLOSE: float = float(os.getenv("ENTRY_SECONDS_BEFORE_CLOSE", "3.0"))
 PRE_CLOSE_SELL_SECONDS: float = float(os.getenv("PRE_CLOSE_SELL_SECONDS", "0.7"))
-GAP_TRIGGER_USD: float = float(os.getenv("GAP_TRIGGER_USD", "2.0"))
+GAP_TRIGGER_USD_ACTIVE: float = float(os.getenv("GAP_TRIGGER_USD_ACTIVE", "60.0"))
+GAP_TRIGGER_USD_DEFAULT: float = float(os.getenv("GAP_TRIGGER_USD_DEFAULT", "125.0"))
+GAP_ACTIVE_START: str = os.getenv("GAP_ACTIVE_START", "07:00")
+GAP_ACTIVE_END: str = os.getenv("GAP_ACTIVE_END", "15:00")
+GAP_ACTIVE_TIMEZONE: str = os.getenv("GAP_ACTIVE_TIMEZONE", "Asia/Bangkok")
 GAP_TRIGGER_PERCENT: float = 0.05  # 5% fallback if needed, though USD is preferred
 REDEEM_LOSSES: bool = os.getenv("REDEEM_LOSSES", "True").lower() == "true"
 
