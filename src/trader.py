@@ -447,7 +447,12 @@ async def trade_loop(client: ClobClient, state: dict, wallet_id: int = 0) -> Non
                     entry_seconds=config.ENTRY_SECONDS_BEFORE_CLOSE,
                     gap_trigger_usd=current_gap_trigger
                 )
-                
+                if not exact_signal:
+                    log.warning("Trade aborted: Exact live prices evaluation failed (likely network error).")
+                    state["last_trade"] = "ABORTED — Math eval failed"
+                    await asyncio.sleep(0.5)
+                    continue
+
                 if not exact_signal.should_trade:
                     log.warning("Trade aborted: Exact live prices erased the mathematical edge.")
                     state["last_trade"] = "ABORTED — Edge lost on live price check"
